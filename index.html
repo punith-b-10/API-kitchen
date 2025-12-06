@@ -1,307 +1,501 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<title>API Chef Simulator 3D - Learn HTTP the Fun Way!</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-<style>
-  body { margin:0; overflow:hidden; font-family: 'Segoe UI', Arial, sans-serif; }
-  #ui {
-    position: absolute; top: 10px; left: 10px; color: white; z-index: 100;
-    background: rgba(0,0,0,0.5); padding: 15px; border-radius: 15px; max-width: 380px;
-    text-shadow: 1px 1px 3px black;
-  }
-  h1 { margin:0; font-size: 26px; color: #ffeb3b; }
-  button {
-    background:#ff5722; color:white; border:none; padding:10px 16px;
-    margin:5px; border-radius:8px; font-size:16px; cursor:pointer;
-    box-shadow:0 4px 8px rgba(0,0,0,0.4);
-  }
-  button:hover { background:#f50057; }
-  button:active { transform:scale(0.95); }
-  #order { font-size:18px; background:#00000099; padding:10px; border-radius:8px; margin:10px 0; }
-  .info { font-size:14px; margin-top:10px; color:#80ff80; }
-  #restart { background:#9c27b0; }
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Kitchen: The Server Chef</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        :root {
+            --neon-blue: #00f2ff;
+            --neon-pink: #ff00ff;
+            --neon-green: #00ff88;
+            --neon-red: #ff3333;
+            --dark-bg: #0a0a12;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            overflow: hidden;
+            font-family: 'Segoe UI', 'Roboto', sans-serif;
+            background-color: var(--dark-bg);
+            color: white;
+            user-select: none;
+        }
+
+        /* 3D Background Canvas */
+        #bg-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: -1;
+        }
+
+        /* Main UI Container */
+        #game-ui {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        /* Header / HUD */
+        #hud {
+            display: flex;
+            justify-content: space-between;
+            font-size: 1.5rem;
+            text-shadow: 0 0 10px var(--neon-blue);
+            margin-bottom: 20px;
+        }
+
+        .hud-box {
+            background: rgba(0,0,0,0.5);
+            padding: 10px 20px;
+            border: 2px solid var(--neon-blue);
+            border-radius: 10px;
+            box-shadow: 0 0 15px var(--neon-blue) inset;
+        }
+
+        /* Main Gameplay Area */
+        #kitchen-area {
+            display: flex;
+            flex: 1;
+            gap: 30px;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* The "Order Ticket" (JSON Viewer) */
+        .ticket-station {
+            flex: 1;
+            max-width: 500px;
+            perspective: 1000px;
+        }
+
+        .ticket {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 3px solid var(--neon-pink);
+            box-shadow: 0 0 30px var(--neon-pink);
+            border-radius: 15px;
+            padding: 25px;
+            font-family: 'Courier New', monospace;
+            white-space: pre-wrap;
+            font-size: 1.2rem;
+            color: #fff;
+            transform-style: preserve-3d;
+            transition: transform 0.5s;
+            animation: floatTicket 3s infinite ease-in-out;
+        }
+
+        @keyframes floatTicket {
+            0%, 100% { transform: translateY(0px) rotateX(5deg); }
+            50% { transform: translateY(-15px) rotateX(5deg); }
+        }
+
+        .ticket h2 { margin-top: 0; color: var(--neon-pink); text-align: center;}
+        .json-key { color: var(--neon-blue); }
+        .json-string { color: var(--neon-green); }
+        .json-number { color: orange; }
+
+        /* The Controls (Response Buttons) */
+        .controls-station {
+            flex: 0.8;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .btn {
+            padding: 20px;
+            font-size: 1.3rem;
+            font-weight: bold;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-transform: uppercase;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn:active { transform: scale(0.95); }
+
+        .btn-200 {
+            background: rgba(0, 255, 136, 0.2);
+            border: 3px solid var(--neon-green);
+            color: var(--neon-green);
+            box-shadow: 0 0 20px var(--neon-green);
+        }
+        .btn-200:hover { background: var(--neon-green); color: black; }
+
+        .btn-400 {
+            background: rgba(255, 165, 0, 0.2);
+            border: 3px solid orange;
+            color: orange;
+            box-shadow: 0 0 20px orange;
+        }
+        .btn-400:hover { background: orange; color: black; }
+
+        .btn-404 {
+            background: rgba(255, 51, 51, 0.2);
+            border: 3px solid var(--neon-red);
+            color: var(--neon-red);
+            box-shadow: 0 0 20px var(--neon-red);
+        }
+        .btn-404:hover { background: var(--neon-red); color: white; }
+
+        /* The Menu Database (Reference) */
+        #menu-reference {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0,0,0,0.7);
+            border: 2px solid var(--neon-blue);
+            padding: 15px;
+            border-radius: 10px;
+        }
+        #menu-reference h3 { margin: 0 0 10px 0; color: var(--neon-blue); }
+        #menu-list li { margin-bottom: 5px; font-family: monospace; color: #aaa; }
+
+        /* Feedback Overlay */
+        #feedback-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 100;
+        }
+
+        #start-screen {
+            position: absolute;
+            top:0; left:0; width:100%; height:100%;
+            background: rgba(10,10,18,0.9);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 200;
+        }
+        #start-screen h1 { font-size: 4rem; color: var(--neon-blue); text-shadow: 0 0 30px var(--neon-pink); margin-bottom: 10px;}
+        #start-button { padding: 20px 40px; font-size: 2rem; background: var(--neon-pink); border: none; color: white; border-radius: 50px; cursor: pointer; box-shadow: 0 0 30px var(--neon-pink);}
+    </style>
 </head>
 <body>
 
-<div id="ui">
-  <h1>API Chef Simulator</h1>
-  <div id="order">Waiting for customer...</div>
-  <div>Score: <span id="score">0</span> | Level: <span id="level">1</span> | Best: <span id="best">0</span></div>
-  <div style="margin:15px 0;">
-    <button onclick="respond(200)">200 OK</button>
-    <button onclick="respond(400)">400 Bad Request</button>
-    <button onclick="respond(404)">404 Not Found</button>
-  </div>
-  <button id="restart">New Game</button>
-  <div class="info">
-    Drag ingredients → pot → choose correct status code!<br>
-    Teaches: JSON parsing • Data validation • HTTP responses
-  </div>
-</div>
+    <canvas id="bg-canvas"></canvas>
 
-<script src="https://cdn.jsdelivr.net/npm/three@0.159/build/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.159/examples/js/controls/DragControls.js"></script>
-<script>
-// ====================== GAME SETUP ======================
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x87CEEB);
+    <div id="feedback-overlay"></div>
 
-const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 1000);
-camera.position.set(0, 8, 12);
-camera.lookAt(0, 2, 0);
+    <div id="start-screen">
+        <h1>API KITCHEN</h1>
+        <p style="font-size: 1.5rem; margin-bottom: 40px;">Be the Server. Process the JSON Orders.</p>
+        <button id="start-button" onclick="startGame()">OPEN RESTAURANT</button>
+    </div>
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(innerWidth, innerHeight);
-renderer.shadowMap.enabled = true;
-document.body.appendChild(renderer.domElement);
+    <div id="game-ui" style="display:none;">
+        <div id="hud">
+            <div class="hud-box">Cash: $<span id="score">0</span></div>
+            <div class="hud-box">Level: <span id="level">1</span></div>
+        </div>
 
-// Lights
-const ambient = new THREE.AmbientLight(0xffffff, 0.6);
-scene.add(ambient);
-const sun = new THREE.DirectionalLight(0xffffff, 0.8);
-sun.position.set(10, 20, 10);
-sun.castShadow = true;
-scene.add(sun);
+        <div id="kitchen-area">
+            <div class="ticket-station">
+                <div class="ticket" id="ticket-display">
+                    <h2>INCOMING REQUEST...</h2>
+                    <div id="json-content">Waiting for orders...</div>
+                </div>
+            </div>
 
-// Kitchen floor
-const floor = new THREE.Mesh(
-  new THREE.BoxGeometry(30, 0.5, 30),
-  new THREE.MeshStandardMaterial({ color: 0x8B7355 })
-);
-floor.receiveShadow = true;
-scene.add(floor);
+            <div class="controls-station">
+                <button class="btn btn-200" onclick="processOrder(200)">
+                    COOK & SERVE<br><small>(200 OK)</small>
+                </button>
+                <button class="btn btn-404" onclick="processOrder(404)">
+                    DISH NOT FOUND<br><small>(404 Not Found)</small>
+                </button>
+                <button class="btn btn-400" onclick="processOrder(400)">
+                    BAD DATA FORMAT<br><small>(400 Bad Request)</small>
+                </button>
+            </div>
+        </div>
 
-// Big shiny cooking pot
-const pot = new THREE.Mesh(
-  new THREE.CylinderGeometry(2.5, 2.8, 3, 32, 1, true),
-  new THREE.MeshStandardMaterial({ color: 0x2222aa, metalness: 0.8, roughness: 0.2, side: THREE.DoubleSide })
-);
-pot.position.y = 1.6;
-pot.receiveShadow = true;
-pot.castShadow = true;
-scene.add(pot);
+        <div id="menu-reference">
+            <h3>DATABASE (MENU)</h3>
+            <ul id="menu-list">
+                </ul>
+        </div>
+    </div>
 
-// Ingredient data
-const recipes = {
-  pizza:   { dough:2, tomato:1, cheese:1 },
-  burger:  { bun:1, patty:1, lettuce:1 },
-  sushi:   { rice:2, fish:1 },
-  pasta:   { noodle:2, sauce:1 }
-};
+    <script>
+        // ===========================
+        // GAME STATE & DATABASE
+        // ===========================
+        let gameState = {
+            score: 0,
+            level: 1,
+            isPlaying: false,
+            currentOrder: null,
+            ordersProcessed: 0
+        };
 
-const colors = {
-  dough:0x00ff88, tomato:0xff3366, cheese:0xffff66,
-  bun:0xd2691e, patty:0x8B4513, lettuce:0x00ff00,
-  rice:0xffffff, fish:0xff88aa, noodle:0xffdd88, sauce:0xff0000
-};
+        // The "Database" - what dishes actually exist
+        const MENU_DATABASE = {
+            "pizza": { price: 15 },
+            "burger": { price: 12 },
+            "salad": { price: 10 },
+            "pasta": { price: 18 }
+        };
 
-let ingredients = [];
-let potContents = {};
-let score = 0, level = 1, currentOrder = null;
+        // Populate the on-screen menu reference
+        const menuList = document.getElementById('menu-list');
+        for(let dish in MENU_DATABASE) {
+            let li = document.createElement('li');
+            li.textContent = `"${dish}" - $${MENU_DATABASE[dish].price}`;
+            menuList.appendChild(li);
+        }
 
-// Create floating glowing ingredients
-function createIngredient(type, x) {
-  const geo = new THREE.SphereGeometry(0.7, 32, 32);
-  const mat = new THREE.MeshStandardMaterial({
-    color: colors[type],
-    emissive: colors[type],
-    emissiveIntensity: 0.4,
-    metalness: 0.3,
-    roughness: 0.4
-  });
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.position.set(x, 2 + Math.random() * 2, -8);
-  mesh.castShadow = true;
-  mesh.userData = { type };
-  scene.add(mesh);
-  ingredients.push(mesh);
+        // Simple audio synths for feedback
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playSound(type) {
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            
+            if(type === 'success') {
+                oscillator.type = 'sine';
+                oscillator.frequency.setValueAtTime(600, audioCtx.currentTime);
+                oscillator.frequency.exponentialRampToValueAtTime(1000, audioCtx.currentTime + 0.1);
+                gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+                oscillator.start(); oscillator.stop(audioCtx.currentTime + 0.5);
+            } else if (type === 'error') {
+                oscillator.type = 'sawtooth';
+                oscillator.frequency.setValueAtTime(200, audioCtx.currentTime);
+                oscillator.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.2);
+                gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.4);
+                oscillator.start(); oscillator.stop(audioCtx.currentTime + 0.4);
+            }
+        }
 
-  // Floating animation
-  mesh.floatOffset = Math.random() * Math.PI * 2;
-}
 
-const types = Object.keys(colors);
-types.forEach((t,i) => {
-  for(let j=0; j<3; j++) createIngredient(t, (i- types.length/2)*2.5);
-});
+        // ===========================
+        // GAME LOGIC: ORDER GENERATION
+        // ===========================
+        function generateOrder() {
+            const dishes = Object.keys(MENU_DATABASE);
+            const randomDish = dishes[Math.floor(Math.random() * dishes.length)];
+            const badDishes = ["shoes", "unicorn steak", "dark matter", "sand"];
+            
+            const scenario = Math.random();
+            let order = {};
+            let expectedStatus = 200;
 
-// Drag controls (works on mobile too!)
-const dragControls = new DragControls(ingredients, camera, renderer.domElement);
-dragControls.addEventListener('dragstart', e => e.object.material.emissiveIntensity = 0.8);
-dragControls.addEventListener('dragend', e => {
-  e.object.material.emissiveIntensity = 0.4;
-  checkDropInPot(e.object);
-});
+            if(scenario < 0.5) {
+                // Scenario 1: Valid Order (50% chance)
+                order = { "dish": randomDish, "quantity": Math.ceil(Math.random() * 3) };
+                expectedStatus = 200;
+            } else if (scenario < 0.75) {
+                // Scenario 2: 404 Not Found (25% chance) - item not in DB
+                order = { "dish": badDishes[Math.floor(Math.random() * badDishes.length)], "quantity": 1 };
+                expectedStatus = 404;
+            } else {
+                // Scenario 3: 400 Bad Request (25% chance) - malformed data
+                if(Math.random() < 0.5) {
+                     // Invalid quantity type (string instead of number)
+                    order = { "dish": randomDish, "quantity": "two" };
+                } else {
+                     // Missing required field
+                    order = { "quantity": 5 };
+                }
+                expectedStatus = 400;
+            }
 
-// ====================== GAME LOGIC ======================
-function newOrder() {
-  const dishes = Object.keys(recipes);
-  const dish = dishes[Math.floor(Math.random()*dishes.length)];
-  const qty = Math.min(1 + Math.floor(score/50), 4); // harder with score
-  currentOrder = { dish, quantity: qty };
-  document.getElementById('order').textContent = 
-    `Customer wants: ${JSON.stringify(currentOrder)}`;
-  potContents = {};
-}
+            gameState.currentOrder = { data: order, expected: expectedStatus };
+            displayOrder(order);
+        }
 
-function checkDropInPot(obj) {
-  const dist = obj.position.distanceTo(pot.position);
-  if (dist < 3) {
-    // Snap inside pot
-    obj.position.lerp(pot.position, 0.5);
-    obj.position.y += 1;
-    potContents[obj.userData.type] = (potContents[obj.userData.type] || 0) + 1;
-    createParticles(obj.position, colors[obj.userData.type]);
-    beep(800, 0.05);
-  }
-}
+        function displayOrder(jsonObj) {
+            const container = document.getElementById('json-content');
+            // Pretty print JSON with colors
+            let jsonStr = JSON.stringify(jsonObj, null, 4);
+            // Simple syntax highlighting regex
+            jsonStr = jsonStr.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+                let cls = 'json-number';
+                if (/^"/.test(match)) {
+                    if (/:$/.test(match)) {
+                        cls = 'json-key'; // Key ending in :
+                    } else {
+                        cls = 'json-string'; // String value
+                    }
+                }
+                return '<span class="' + cls + '">' + match + '</span>';
+            });
+            container.innerHTML = jsonStr;
 
-function createParticles(pos, color) {
-  for(let i=0; i<15; i++) {
-    const p = new THREE.Mesh(
-      new THREE.SphereGeometry(0.15),
-      new THREE.MeshBasicMaterial({ color })
-    );
-    p.position.copy(pos);
-    scene.add(p);
-    const vel = new THREE.Vector3(
-      (Math.random()-0.5)*6,
-      Math.random()*8,
-      (Math.random()-0.5)*6
-    );
-    const animate = () => {
-      p.position.add(vel);
-      vel.y -= 0.3;
-      p.scale.multiplyScalar(0.95);
-      if (p.scale.x < 0.01) scene.remove(p);
-      else requestAnimationFrame(animate);
-    };
-    animate();
-  }
-}
+            // Reset ticket animation animation
+            const ticket = document.getElementById('ticket-display');
+            ticket.style.animation = 'none';
+            ticket.offsetHeight; /* trigger reflow */
+            ticket.style.animation = null; 
+        }
 
-window.respond = function(code) {
-  if (!currentOrder) return;
 
-  let correct = false;
-  const needed = recipes[currentOrder.dish];
+        // ===========================
+        // GAME LOGIC: PLAYER ACTION
+        // ===========================
+        function processOrder(playerSelectedStatus) {
+            if(!gameState.isPlaying || !gameState.currentOrder) return;
 
-  if (!needed) {
-    correct = code === 404;
-  } else if (code === 200) {
-    correct = Object.keys(needed).every(
-      ing => (potContents[ing] || 0) === needed[ing] * currentOrder.quantity
-    );
-  } else if (code === 400) {
-    correct = !Object.keys(needed).every(
-      ing => (potContents[ing] || 0) === needed[ing] * currentOrder.quantity
-    );
-  }
+            const correctStatus = gameState.currentOrder.expected;
+            let isCorrect = (playerSelectedStatus === correctStatus);
 
-  if (correct) {
-    score += 20 * level;
-    successEffect();
-  } else {
-    score = Math.max(0, score - 10);
-    pot.material.color.set(0xff0000);
-    setTimeout(()=>pot.material.color.set(0x2222aa), 400);
-    beep(200, 0.3);
-  }
+            if (isCorrect) {
+                // Success!
+                handleSuccess(playerSelectedStatus);
+            } else {
+                // Failure!
+                handleFailure(playerSelectedStatus, correctStatus);
+            }
 
-  document.getElementById('score').textContent = score;
-  if (score > (localStorage.bestAPIchef || 0)) {
-    localStorage.bestAPIchef = score;
-  }
-  document.getElementById('best').textContent = localStorage.bestAPIchef || 0;
+            // Progression system
+            gameState.ordersProcessed++;
+            if(gameState.ordersProcessed % 5 === 0) {
+                gameState.level++;
+                document.getElementById('level').innerText = gameState.level;
+                playSound('success'); // Extra beep for level up
+            }
 
-  level = 1 + Math.floor(score / 100);
-  document.getElementById('level').textContent = level;
+            // Load next order after short delay
+            gameState.currentOrder = null;
+            document.getElementById('json-content').innerHTML = "Processing next order...";
+            setTimeout(generateOrder, 1500 - (gameState.level * 100)); // Get faster per level
+        }
 
-  // Reset ingredients to shelf
-  ingredients.forEach(ing => {
-    ing.position.y = 10;
-    setTimeout(() => {
-      ing.position.set(
-        (types.indexOf(ing.userData.type) - types.length/2)*2.5,
-        2 + Math.random()*2,
-        -8
-      );
-    }, 500);
-  });
+        function handleSuccess(status) {
+            playSound('success');
+            flashFeedback('var(--neon-green)');
+            
+            let earnings = 0;
+            if(status === 200) {
+                // Calculate bill based on DB price
+                const dishName = gameState.currentOrder.data.dish;
+                const qty = gameState.currentOrder.data.quantity;
+                earnings = MENU_DATABASE[dishName].price * qty;
+            } else {
+                // Smaller bonus for correctly identifying errors
+                earnings = 5;
+            }
+            gameState.score += earnings;
+            updateScore();
+        }
 
-  setTimeout(newOrder, 800);
-}
+        function handleFailure(selected, expected) {
+            playSound('error');
+            flashFeedback('var(--neon-red)');
+            gameState.score = Math.max(0, gameState.score - 10); // Penalty
+            updateScore();
+            // In a full game, we'd show a "Why you failed" modal here.
+            console.log(`Failed. You said ${selected}, but it should have been ${expected}`);
+        }
 
-function successEffect() {
-  beep(600,0.1); beep(800,0.1); beep(1000,0.2);
-  createParticles(pot.position, 0xffff00);
-  // Confetti rain
-  for(let i=0;i<50;i++) {
-    setTimeout(() => {
-      const c = new THREE.Mesh(
-        new THREE.BoxGeometry(0.2,0.4,0.05),
-        new THREE.MeshBasicMaterial({color:Math.random()*0xffffff})
-      );
-      );
-      c.position.set((Math.random()-0.5)*20, 20, (Math.random()-0.5)*20);
-      scene.add(c);
-      const fall = () => {
-        c.position.y -= 0.3;
-        c.rotation.x += 0.1;
-        c.rotation.y += 0.1;
-        if (c.position.y > -5) requestAnimationFrame(fall);
-        else scene.remove(c);
-      };
-      fall();
-    }, i*50);
-  }
-}
+        function updateScore() {
+            document.getElementById('score').innerText = gameState.score;
+        }
 
-function beep(freq, dur) {
-  const ctx = new (window.AudioContext || window.webkitAudioContext)();
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  osc.connect(gain);
-  gain.connect(ctx.destination);
-  osc.frequency.value = freq;
-  osc.type = 'sine';
-  gain.gain.setValueAtTime(0.3, ctx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + dur);
-  osc.start(ctx.currentTime);
-  osc.stop(ctx.currentTime + dur);
-}
+        function flashFeedback(color) {
+            const overlay = document.getElementById('feedback-overlay');
+            overlay.style.backgroundColor = color;
+            overlay.style.opacity = 0.3;
+            setTimeout(() => { overlay.style.opacity = 0; }, 300);
+        }
 
-// Restart
-document.getElementById('restart').onclick = () => {
-  score = 0;
-  level = 1;
-  document.getElementById('score').textContent = 0;
-  document.getElementById('level').textContent = 1;
-  newOrder();
-};
+        function startGame() {
+            document.getElementById('start-screen').style.display = 'none';
+            document.getElementById('game-ui').style.display = 'flex';
+            gameState.isPlaying = true;
+            // Initialize audio context on first user interaction
+            if (audioCtx.state === 'suspended') { audioCtx.resume(); }
+            generateOrder();
+        }
 
-// Start
-newOrder();
 
-// Animation loop
-function animate() {
-  requestAnimationFrame(animate);
-  ingredients.forEach(i => {
-    i.position.y += Math.sin(Date.now()*0.003 + i.floatOffset)*0.01;
-    i.rotation.y += 0.01;
-  });
-  renderer.render(scene, camera);
-}
-animate();
+        // ===========================
+        // THREE.JS BACKGROUND SETUP
+        // ===========================
+        const canvas = document.querySelector('#bg-canvas');
+        const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setClearColor(0x0a0a12);
 
-window.addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
-});
-</script>
+        const scene = new THREE.Scene();
+        // Fog to hide the distance and create depth
+        scene.fog = new THREE.FogExp2(0x0a0a12, 0.05);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.z = 10;
+        camera.position.y = 2;
+
+        // Add some glowing "Server Racks"
+        const geometry = new THREE.BoxGeometry(1, 4, 1);
+        for (let i = 0; i < 20; i++) {
+            // Random neon colors for racks
+            const colors = [0x00f2ff, 0xff00ff, 0x00ff88];
+            const randColor = colors[Math.floor(Math.random() * colors.length)];
+            
+            const material = new THREE.MeshStandardMaterial({
+                color: 0x111111,
+                emissive: randColor,
+                emissiveIntensity: 0.5,
+                roughness: 0.2,
+                metalness: 0.8
+            });
+            const cube = new THREE.Mesh(geometry, material);
+            
+            // Scatter them in the background
+            cube.position.x = (Math.random() - 0.5) * 30;
+            cube.position.z = -5 - Math.random() * 20;
+            cube.position.y = Math.random() * 2;
+            scene.add(cube);
+        }
+
+        // Add lights
+        const light = new THREE.PointLight(0xffffff, 1, 100);
+        light.position.set(0, 10, 10);
+        scene.add(light);
+        const ambientLight = new THREE.AmbientLight(0x404040); // soft white light
+        scene.add(ambientLight);
+
+        // Animation loop
+        let time = 0;
+        function animate() {
+            requestAnimationFrame(animate);
+            time += 0.002;
+            // Slowly move camera forward through the server room
+            camera.position.z -= 0.02;
+            camera.position.y = 2 + Math.sin(time)*0.5; // slight bobbing
+
+            // Reset camera if it goes too far
+            if(camera.position.z < -10) {
+                camera.position.z = 10;
+            }
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+    </script>
 </body>
 </html>
