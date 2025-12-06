@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>API Chef Simulator 3D - Learn HTTP the Fun Way!</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+<style>
+  body { margin:0; overflow:hidden; font-family: 'Segoe UI', Arial, sans-serif; }
+  #ui {
+    position: absolute; top: 10px; left: 10px; color: white; z-index: 100;
+    background: rgba(0,0,0,0.5); padding: 15px; border-radius: 15px; max-width: 380px;
+    text-shadow: 1px 1px 3px black;
+  }
+  h1 { margin:0; font-size: 26px; color: #ffeb3b; }
+  button {
+    background:#ff5722; color:white; border:none; padding:10px 16px;
+    margin:5px; border-radius:8px; font-size:16px; cursor:pointer;
+    box-shadow:0 4px 8px rgba(0,0,0,0.4);
+  }
+  button:hover { background:#f50057; }
+  button:active { transform:scale(0.95); }
+  #order { font-size:18px; background:#00000099; padding:10px; border-radius:8px; margin:10px 0; }
+  .info { font-size:14px; margin-top:10px; color:#80ff80; }
+  #restart { background:#9c27b0; }
+</style>
+</head>
+<body>
+
+<div id="ui">
+  <h1>API Chef Simulator</h1>
+  <div id="order">Waiting for customer...</div>
+  <div>Score: <span id="score">0</span> | Level: <span id="level">1</span> | Best: <span id="best">0</span></div>
+  <div style="margin:15px 0;">
+    <button onclick="respond(200)">200 OK</button>
+    <button onclick="respond(400)">400 Bad Request</button>
+    <button onclick="respond(404)">404 Not Found</button>
+  </div>
+  <button id="restart">New Game</button>
+  <div class="info">
+    Drag ingredients → pot → choose correct status code!<br>
+    Teaches: JSON parsing • Data validation • HTTP responses
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.159/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.159/examples/js/controls/DragControls.js"></script>
+<script>
+// ====================== GAME SETUP ======================
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87CEEB);
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 1000);
+camera.position.set(0, 8, 12);
+camera.lookAt(0, 2, 0);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+
+// Lights
+const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+scene.add(ambient);
+const sun = new THREE.DirectionalLight(0xffffff, 0.8);
+sun.position.set(10, 20, 10);
+sun.castShadow = true;
+scene.add(sun);
+
+// Kitchen floor
+const floor = new THREE.Mesh(
+  new THREE.BoxGeometry(30, 0.5, 30),
+  new THREE.MeshStandardMaterial({ color: 0x8B7355 })
+);
+floor.receiveShadow = true;
+scene.add(floor);
+
+// Big shiny cooking pot
+const pot = new THREE.Mesh(
+  new THREE.CylinderGeometry(2.5, 2.8, 3, 32, 1, true),
+  new THREE.MeshStandardMaterial({ color: 0x2222aa, metalness: 0.8, roughness: 0.2, side: THREE.DoubleSide })
+);
+pot.position.y = 1.6;
+pot.receiveShadow = true;
+pot.castShadow = true;
+scene.add(pot);
+
+// Ingredient data
+const recipes = {
+  pizza:   { dough:2, tomato:1, cheese:1 },
+  burger:  { bun:1, patty:1, lettuce:1 },
+  sushi:   { rice:2, fish:1 },
+  pasta:   { noodle:2, sauce:1 }
+};
+
+const colors = {
+  dough:0x00ff88, tomato:0xff3366, cheese:0xffff66,
+  bun:0xd2691e, patty:0x8B4513, lettuce:0x00ff00,
+  rice:0xffffff, fish:0xff88aa, noodle:0xffdd88, sauce:0xff0000
+};
+
+let ingredients = [];
+let potContents = {};
+let score = 0, level = 1, currentOrder = null;
+
+// Create floating glowing ingredients
+function createIngredient(type, x) {
+  const geo = new THREE.SphereGeometry(0.7, 32, 32);
+  const mat = new THREE.MeshStandardMaterial({
+    color: colors[type],
+    emissive: colors[type],
+    emissiveIntensity: 0.4,
+    metalness: 0.3,
+    roughness: 0.4
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(x, 2 + Math.random() * 2, -8);
+  mesh.castShadow = true;
+  mesh.userData = { type };
+  scene.add(mesh);
+  ingredients.push(mesh);
+
+  // Floating animation
+  mesh.floatOffset = Math.random() * Math.PI * 2;
+}
+
+const types = Object.keys(colors);
+types.forEach((t,i) => {
+  for(let j=0; j<3; j++) createIngredient(t, (i- types.length/2)*2.5);
+});
+
+// Drag controls (works on mobile too!)
+const dragControls = new DragControls(ingredients, camera, renderer.domElement);
+dragControls.addEventListener('dragstart', e => e.object.material.emissiveIntensity = 0.8);
+dragControls.addEventListener('dragend', e => {
+  e.object.material.emissiveIntensity = 0.4;
+  checkDropInPot(e.object);
+});
+
+// ====================== GAME LOGIC ======================
+function newOrder() {
+  const dishes = Object.keys(recipes);
+  const dish = dishes[Math.floor(Math.random()*dishes.length)];
+  const qty = Math.min(1 + Math.floor(score/50), 4); // harder with score
+  currentOrder = { dish, quantity: qty };
+  document.getElementById('order').textContent = 
+    `Customer wants: ${JSON.stringify(currentOrder)}`;
+  potContents = {};
+}
+
+function checkDropInPot(obj) {
+  const dist = obj.position.distanceTo(pot.position);
+  if (dist < 3) {
+    // Snap inside pot
+    obj.position.lerp(pot.position, 0.5);
+    obj.position.y += 1;
+    potContents[obj.userData.type] = (potContents[obj.userData.type] || 0) + 1;
+    createParticles(obj.position, colors[obj.userData.type]);
+    beep(800, 0.05);
+  }
+}
+
+function createParticles(pos, color) {
+  for(let i=0; i<15; i++) {
+    const p = new THREE.Mesh(
+      new THREE.SphereGeometry(0.15),
+      new THREE.MeshBasicMaterial({ color })
+    );
+    p.position.copy(pos);
+    scene.add(p);
+    const vel = new THREE.Vector3(
+      (Math.random()-0.5)*6,
+      Math.random()*8,
+      (Math.random()-0.5)*6
+    );
+    const animate = () => {
+      p.position.add(vel);
+      vel.y -= 0.3;
+      p.scale.multiplyScalar(0.95);
+      if (p.scale.x < 0.01) scene.remove(p);
+      else requestAnimationFrame(animate);
+    };
+    animate();
+  }
+}
+
+window.respond = function(code) {
+  if (!currentOrder) return;
+
+  let correct = false;
+  const needed = recipes[currentOrder.dish];
+
+  if (!needed) {
+    correct = code === 404;
+  } else if (code === 200) {
+    correct = Object.keys(needed).every(
+      ing => (potContents[ing] || 0) === needed[ing] * currentOrder.quantity
+    );
+  } else if (code === 400) {
+    correct = !Object.keys(needed).every(
+      ing => (potContents[ing] || 0) === needed[ing] * currentOrder.quantity
+    );
+  }
+
+  if (correct) {
+    score += 20 * level;
+    successEffect();
+  } else {
+    score = Math.max(0, score - 10);
+    pot.material.color.set(0xff0000);
+    setTimeout(()=>pot.material.color.set(0x2222aa), 400);
+    beep(200, 0.3);
+  }
+
+  document.getElementById('score').textContent = score;
+  if (score > (localStorage.bestAPIchef || 0)) {
+    localStorage.bestAPIchef = score;
+  }
+  document.getElementById('best').textContent = localStorage.bestAPIchef || 0;
+
+  level = 1 + Math.floor(score / 100);
+  document.getElementById('level').textContent = level;
+
+  // Reset ingredients to shelf
+  ingredients.forEach(ing => {
+    ing.position.y = 10;
+    setTimeout(() => {
+      ing.position.set(
+        (types.indexOf(ing.userData.type) - types.length/2)*2.5,
+        2 + Math.random()*2,
+        -8
+      );
+    }, 500);
+  });
+
+  setTimeout(newOrder, 800);
+}
+
+function successEffect() {
+  beep(600,0.1); beep(800,0.1); beep(1000,0.2);
+  createParticles(pot.position, 0xffff00);
+  // Confetti rain
+  for(let i=0;i<50;i++) {
+    setTimeout(() => {
+      const c = new THREE.Mesh(
+        new THREE.BoxGeometry(0.2,0.4,0.05),
+        new THREE.MeshBasicMaterial({color:Math.random()*0xffffff})
+      );
+      );
+      c.position.set((Math.random()-0.5)*20, 20, (Math.random()-0.5)*20);
+      scene.add(c);
+      const fall = () => {
+        c.position.y -= 0.3;
+        c.rotation.x += 0.1;
+        c.rotation.y += 0.1;
+        if (c.position.y > -5) requestAnimationFrame(fall);
+        else scene.remove(c);
+      };
+      fall();
+    }, i*50);
+  }
+}
+
+function beep(freq, dur) {
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.frequency.value = freq;
+  osc.type = 'sine';
+  gain.gain.setValueAtTime(0.3, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + dur);
+  osc.start(ctx.currentTime);
+  osc.stop(ctx.currentTime + dur);
+}
+
+// Restart
+document.getElementById('restart').onclick = () => {
+  score = 0;
+  level = 1;
+  document.getElementById('score').textContent = 0;
+  document.getElementById('level').textContent = 1;
+  newOrder();
+};
+
+// Start
+newOrder();
+
+// Animation loop
+function animate() {
+  requestAnimationFrame(animate);
+  ingredients.forEach(i => {
+    i.position.y += Math.sin(Date.now()*0.003 + i.floatOffset)*0.01;
+    i.rotation.y += 0.01;
+  });
+  renderer.render(scene, camera);
+}
+animate();
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>
